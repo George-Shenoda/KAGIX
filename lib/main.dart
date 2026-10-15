@@ -850,15 +850,41 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
         title: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0A192F), Color(0xFF0F3460)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: const Color(0xFF00F5D4).withOpacity(0.65),
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF00BBF9).withOpacity(0.25),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
-              child: Icon(
-                Icons.home_work_rounded,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-                size: 20,
+              child: const Stack(
+                alignment: Alignment.center,
+                children: [
+                  Icon(
+                    Icons.shield_outlined,
+                    color: Color(0xFF00F5D4),
+                    size: 24,
+                  ),
+                  Icon(
+                    Icons.lock_outline,
+                    color: Color(0xFF38BDF8),
+                    size: 12,
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: 10),
