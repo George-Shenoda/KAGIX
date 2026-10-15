@@ -12,6 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space on runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -47,6 +51,18 @@ jobs:
           fi
           if [ -d /tmp/kagix_res ]; then
             cp -r /tmp/kagix_res/mipmap-* android/app/src/main/res/ 2>/dev/null || true
+          fi
+
+          # Use the pre-installed Android NDK on the GitHub runner so sdkmanager never downloads NDK r28c
+          INSTALLED_NDK=$(ls "${ANDROID_HOME:-/usr/local/lib/android/sdk}/ndk" 2>/dev/null | sort -V | tail -n 1)
+          echo "Using pre-installed NDK: $INSTALLED_NDK"
+          if [ -n "$INSTALLED_NDK" ]; then
+            if [ -f android/app/build.gradle.kts ]; then
+              sed -i "s/ndkVersion = flutter.ndkVersion/ndkVersion = "$INSTALLED_NDK"/g" android/app/build.gradle.kts
+            fi
+            if [ -f android/app/build.gradle ]; then
+              sed -i "s/ndkVersion flutter.ndkVersion/ndkVersion "$INSTALLED_NDK"/g" android/app/build.gradle
+            fi
           fi
 
       - name: Install dependencies
