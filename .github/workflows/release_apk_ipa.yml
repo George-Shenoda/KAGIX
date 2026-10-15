@@ -23,7 +23,7 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Generate clean AGP 9 Android project & inject Kagix files
+      - name: Generate clean AGP 9 Android project & inject Kagix files + App Icons
         run: |
           cp lib/main.dart /tmp/main.dart
           if [ -f android/app/src/main/AndroidManifest.xml ]; then
@@ -31,6 +31,9 @@ jobs:
           fi
           if [ -f android/app/src/main/kotlin/com/kagix/kagix_smart_home/MainActivity.kt ]; then
             cp android/app/src/main/kotlin/com/kagix/kagix_smart_home/MainActivity.kt /tmp/MainActivity.kt
+          fi
+          if [ -d android/app/src/main/res ]; then
+            cp -r android/app/src/main/res /tmp/kagix_res
           fi
           rm -rf android pubspec.lock
           flutter create --project-name kagix_smart_home --org com.kagix .
@@ -41,6 +44,9 @@ jobs:
           if [ -f /tmp/MainActivity.kt ]; then
             mkdir -p android/app/src/main/kotlin/com/kagix/kagix_smart_home
             cp /tmp/MainActivity.kt android/app/src/main/kotlin/com/kagix/kagix_smart_home/MainActivity.kt
+          fi
+          if [ -d /tmp/kagix_res ]; then
+            cp -r /tmp/kagix_res/mipmap-* android/app/src/main/res/ 2>/dev/null || true
           fi
 
       - name: Install dependencies
@@ -66,7 +72,7 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Generate clean iOS project & inject Kagix files
+      - name: Generate clean iOS project & inject Kagix files + App Icon
         run: |
           cp lib/main.dart /tmp/main.dart
           if [ -f ios/Runner/Info.plist ]; then
@@ -77,6 +83,9 @@ jobs:
           cp /tmp/main.dart lib/main.dart
           if [ -f /tmp/Info.plist ]; then
             cp /tmp/Info.plist ios/Runner/Info.plist
+          fi
+          if [ -f assets/icon/app_icon.png ]; then
+            cp assets/icon/app_icon.png ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png 2>/dev/null || true
           fi
 
       - name: Install dependencies
