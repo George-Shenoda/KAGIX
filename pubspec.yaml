@@ -1,0 +1,27 @@
+name: kagix_smart_home
+description: >-
+  Kagix Smart Home mobile controller app for MCT 331s Mechatronic System
+  Integration (Ain Shams University). Supports Bluetooth Classic (HC-05 / HC-06)
+  and bidirectional "alongside" hardware co-control.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  # Bluetooth Classic Serial Port Profile (SPP) for HC-05 / HC-06 modules
+  flutter_bluetooth_serial: ^0.4.0
+  # Runtime Bluetooth & Location permissions for Android 12+ (API 31+)
+  permission_handler: ^11.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
