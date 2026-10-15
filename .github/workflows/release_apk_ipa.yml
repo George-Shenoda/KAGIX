@@ -23,14 +23,28 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Generate missing platform scaffolding if needed
-        run: flutter create --project-name kagix_smart_home --org com.kagix .
+      - name: Generate clean AGP 9 Android project & inject Kagix files
+        run: |
+          cp lib/main.dart /tmp/main.dart
+          if [ -f android/app/src/main/AndroidManifest.xml ]; then
+            cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml
+          fi
+          if [ -f android/app/src/main/kotlin/com/kagix/kagix_smart_home/MainActivity.kt ]; then
+            cp android/app/src/main/kotlin/com/kagix/kagix_smart_home/MainActivity.kt /tmp/MainActivity.kt
+          fi
+          rm -rf android pubspec.lock
+          flutter create --project-name kagix_smart_home --org com.kagix .
+          cp /tmp/main.dart lib/main.dart
+          if [ -f /tmp/AndroidManifest.xml ]; then
+            sed 's/package="com.kagix.smarthome"//g' /tmp/AndroidManifest.xml > android/app/src/main/AndroidManifest.xml
+          fi
+          if [ -f /tmp/MainActivity.kt ]; then
+            mkdir -p android/app/src/main/kotlin/com/kagix/kagix_smart_home
+            cp /tmp/MainActivity.kt android/app/src/main/kotlin/com/kagix/kagix_smart_home/MainActivity.kt
+          fi
 
       - name: Install dependencies
         run: flutter pub get
-
-      - name: Build Release APK
-        run: flutter build apk --release --split-per-abi
 
       - name: Build Universal Release APK
         run: flutter build apk --release
@@ -39,7 +53,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Kagix-Smart-Home-Android-APK
-          path: build/app/outputs/flutter-apk/*.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
 
   build-ios-ipa:
     name: Build iOS Production App (IPA)
@@ -52,8 +66,18 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Generate iOS platform scaffolding if needed
-        run: flutter create --project-name kagix_smart_home --org com.kagix .
+      - name: Generate clean iOS project & inject Kagix files
+        run: |
+          cp lib/main.dart /tmp/main.dart
+          if [ -f ios/Runner/Info.plist ]; then
+            cp ios/Runner/Info.plist /tmp/Info.plist
+          fi
+          rm -rf ios pubspec.lock
+          flutter create --project-name kagix_smart_home --org com.kagix .
+          cp /tmp/main.dart lib/main.dart
+          if [ -f /tmp/Info.plist ]; then
+            cp /tmp/Info.plist ios/Runner/Info.plist
+          fi
 
       - name: Install dependencies
         run: flutter pub get
@@ -61,7 +85,7 @@ jobs:
       - name: Build iOS Release (No Codesign)
         run: flutter build ios --release --no-codesign
 
-      - name: Package Runner.app into KagixSmartHome.ipa
+      - name: Package Runner.app into Kagix-Smart-Home-iOS.ipa
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
