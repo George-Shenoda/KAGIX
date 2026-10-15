@@ -53,15 +53,15 @@ jobs:
             cp -r /tmp/kagix_res/mipmap-* android/app/src/main/res/ 2>/dev/null || true
           fi
 
-          # Use the pre-installed Android NDK on the GitHub runner so sdkmanager never downloads NDK r28c
+          # Use the pre-installed Android NDK on the GitHub runner with valid Kotlin string quotes
           INSTALLED_NDK=$(ls "${ANDROID_HOME:-/usr/local/lib/android/sdk}/ndk" 2>/dev/null | sort -V | tail -n 1)
           echo "Using pre-installed NDK: $INSTALLED_NDK"
           if [ -n "$INSTALLED_NDK" ]; then
             if [ -f android/app/build.gradle.kts ]; then
-              sed -i "s/ndkVersion = flutter.ndkVersion/ndkVersion = "$INSTALLED_NDK"/g" android/app/build.gradle.kts
+              python3 -c "p=\"android/app/build.gradle.kts\"; s=open(p).read().replace(\"flutter.ndkVersion\", \"\\\"$INSTALLED_NDK\\\"\"); open(p,\"w\").write(s)"
             fi
             if [ -f android/app/build.gradle ]; then
-              sed -i "s/ndkVersion flutter.ndkVersion/ndkVersion "$INSTALLED_NDK"/g" android/app/build.gradle
+              python3 -c "p=\"android/app/build.gradle\"; s=open(p).read().replace(\"flutter.ndkVersion\", \"\\\"$INSTALLED_NDK\\\"\"); open(p,\"w\").write(s)"
             fi
           fi
 
