@@ -187,8 +187,8 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
   @override
   void initState() {
     super.initState();
-    _state.connectedDevice = _pairedDevices.first;
-    _state.isBtConnected = true;
+    _state.connectedDevice = null;
+    _state.isBtConnected = false;
     _appendSerialMonitor(
       'SYS',
       'Bluetooth Classic SPP ready (Arduino Nano @ 9600 baud • PIN: 2006)',
@@ -224,23 +224,39 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
     });
     try {
       await _btChannel.invokeMethod('requestPermissions');
-      final List<dynamic>? bonded =
-          await _btChannel.invokeMethod<List<dynamic>>('getPairedDevices');
-      if (bonded != null && bonded.isNotEmpty && mounted) {
-        setState(() {
-          _pairedDevices = bonded.map((item) {
-            final map = Map<String, dynamic>.from(item as Map);
-            return BtClassicDevice(
-              name: map['name']?.toString() ?? 'Unknown',
-              address: map['address']?.toString() ?? '',
-            );
-          }).toList();
-          _state.connectedDevice = _pairedDevices.first;
-        });
-      }
+      await _refreshPairedDevices(autoConnectHc05: true);
     } catch (_) {
       // Simulator or desktop preview fallback
     }
+  }
+
+  Future<void> _refreshPairedDevices({bool autoConnectHc05 = false}) async {
+    try {
+      await _btChannel.invokeMethod('requestPermissions');
+      final List<dynamic>? bonded =
+          await _btChannel.invokeMethod<List<dynamic>>('getPairedDevices');
+      if (bonded != null && bonded.isNotEmpty && mounted) {
+        final list = bonded.map((item) {
+          final map = Map<String, dynamic>.from(item as Map);
+          return BtClassicDevice(
+            name: map['name']?.toString() ?? 'Unknown',
+            address: map['address']?.toString() ?? '',
+          );
+        }).toList();
+        setState(() {
+          _pairedDevices = list;
+        });
+        if (autoConnectHc05 && !_state.isBtConnected) {
+          final hc = list.firstWhere(
+            (d) =>
+                d.name.toUpperCase().contains('HC') ||
+                d.name.toUpperCase().contains('KAGIX'),
+            orElse: () => list.first,
+          );
+          await _connectNativeBt(hc);
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _connectNativeBt(BtClassicDevice dev) async {
@@ -267,12 +283,12 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _state.isBtConnected = true;
+          _state.isBtConnected = false;
           _state.isBtConnecting = false;
         });
         _appendSerialMonitor(
           'SYS',
-          'Active link switched to ${dev.name} (${dev.address})',
+          'Connect failed to ${dev.name}: $e (Close Serial Terminal app first!)',
         );
       }
     }

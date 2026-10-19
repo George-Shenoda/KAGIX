@@ -27,6 +27,7 @@ class MainActivity : FlutterActivity() {
     @Volatile private var isReading = false
     private var methodChannel: MethodChannel? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var pendingPermissionResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -34,11 +35,16 @@ class MainActivity : FlutterActivity() {
         methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "requestPermissions" -> {
-                    ensureBtPermissions()
-                    result.success(true)
+                    if (hasBtPermissions()) {
+                        result.success(true)
+                    } else {
+                        pendingPermissionResult = result
+                        requestBtPermissions()
+                    }
                 }
                 "getPairedDevices" -> {
-                    if (!ensureBtPermissions()) {
+                    if (!hasBtPermissions()) {
+                        requestBtPermissions()
                         result.success(emptyList<Map<String, String>>())
                     } else {
                         result.success(getBondedDevicesList())
@@ -65,24 +71,40 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun ensureBtPermissions(): Boolean {
+    private fun hasBtPermissions(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val connectPerm = checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)
             val scanPerm = checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)
-            if (connectPerm != PackageManager.PERMISSION_GRANTED ||
-                scanPerm != PackageManager.PERMISSION_GRANTED
-            ) {
-                requestPermissions(
-                    arrayOf(
-                        Manifest.permission.BLUETOOTH_CONNECT,
-                        Manifest.permission.BLUETOOTH_SCAN
-                    ),
-                    1001
-                )
-                return false
-            }
+            return connectPerm == PackageManager.PERMISSION_GRANTED &&
+                    scanPerm == PackageManager.PERMISSION_GRANTED
         }
         return true
+    }
+
+    private fun requestBtPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            requestPermissions(
+                arrayOf(
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.BLUETOOTH_SCAN
+                ),
+                1001
+            )
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1001) {
+            val granted = grantResults.isNotEmpty() &&
+                    grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            pendingPermissionResult?.success(granted)
+            pendingPermissionResult = null
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -110,13 +132,51 @@ class MainActivity : FlutterActivity() {
                 val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
                 val adapter: BluetoothAdapter? = btManager?.adapter
                 val device = adapter?.getRemoteDevice(address)
-                val socket = device?.createRfcommSocketToServiceRecord(SPP_UUID)
-                adapter?.cancelDiscovery()
-                socket?.connect()
-                btSocket = socket
-                outputStream = socket?.outputStream
+                    ?: throw Exception("Bluetooth device not found: $address")
+
+                adapter.cancelDiscovery()
+
+                // 3-Stage RFCOMM Connection Strategy (same as Serial Bluetooth Terminal for HC-05/HC-06):
+                // 1) Standard secure RFCOMM socket
+                // 2) Insecure RFCOMM socket
+                // 3) Channel 1 reflection fallback for Chinese HC-05 clones
+                var connectedSocket: BluetoothSocket? = null
+                var lastErr: Exception? = null
+
+                try {
+                    val s1 = device.createRfcommSocketToServiceRecord(SPP_UUID)
+                    s1.connect()
+                    connectedSocket = s1
+                } catch (e1: Exception) {
+                    lastErr = e1
+                    try {
+                        val s2 = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID)
+                        s2.connect()
+                        connectedSocket = s2
+                    } catch (e2: Exception) {
+                        lastErr = e2
+                        try {
+                            val m = device.javaClass.getMethod(
+                                "createRfcommSocket",
+                                Int::class.javaPrimitiveType
+                            )
+                            val s3 = m.invoke(device, 1) as BluetoothSocket
+                            s3.connect()
+                            connectedSocket = s3
+                        } catch (e3: Exception) {
+                            lastErr = e3
+                        }
+                    }
+                }
+
+                if (connectedSocket == null || !connectedSocket.isConnected) {
+                    throw lastErr ?: Exception("RFCOMM connect failed")
+                }
+
+                btSocket = connectedSocket
+                outputStream = connectedSocket.outputStream
                 isReading = true
-                startReadingLoop(socket?.inputStream)
+                startReadingLoop(connectedSocket.inputStream)
                 mainHandler.post { result.success(true) }
             } catch (e: Exception) {
                 disconnectSocket()
