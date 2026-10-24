@@ -10,7 +10,7 @@ import 'package:flutter/services.dart';
 //   • MCU:           Arduino Nano (ATmega328P — 22 Pins, Zero Pin Conflicts)
 //   • Communication: Bluetooth Classic SPP (HC-05 / HC-06 @ 9600 baud on D0/D1)
 //   • Zero Sharing:  2 Dedicated 10k Potentiometers (A6 Light, A7 Climate),
-//                    2 Dedicated 8x8 NeoPixel Matrix LEDs (D6 Indoor, D7 Exterior),
+//                    2 Dedicated 8x8 MAX7219 Matrix LEDs (D6/D7/D13),
 //                    2 Dedicated Physical Switches (D3 Light, D8 Security)
 //   • Protocol:      Matches SmartHome.ino / BluetoothManager.cpp 100%
 // ============================================================================
@@ -67,16 +67,16 @@ class KagixHomeState {
   String keypadPin;
   String lastDoorTriggerSource;
 
-  // 2. Security System (SecuritySystem.cpp: Switch #2 D8, IR2 A2, PIR A3, Buzzer D5, Matrix #2 D7)
+  // 2. Security System (SecuritySystem.cpp: Switch #2 D8, IR2 A2, PIR A3, Buzzer D5, Matrix #2)
   bool isSecurityArmed;
   bool isWindowOpen;
   bool isMotionDetected;
   bool isAlarmTriggered;
-  bool isExteriorMatrixOn; // Dedicated 8x8 Matrix LED #2 on Pin D7 (60s timer)
+  bool isExteriorMatrixOn;
 
-  // 3. Automatic Indoor Lighting (Light.cpp: Switch #1 D3, LDR A0, Pot #1 A6, Matrix #1 D6)
+  // 3. Automatic Indoor Lighting (Light.cpp: Switch #1 D3, LDR A0, Pot #1 A6, Matrix #1)
   bool isIndoorLightAuto;
-  bool isIndoorLightOn; // Dedicated 8x8 Matrix LED #1 on Pin D6
+  bool isIndoorLightOn;
   int ldrAdcValue;      // 0..1023 on Pin A0
   int ldrThreshold;     // 0..1023 set by Potentiometer #1 (A6) or L_THR:<val>
   int matrixBrightness; // 0..255 set by BRI:<val> (default 50)
@@ -99,9 +99,9 @@ class KagixHomeState {
 
   KagixHomeState({
     this.isDoorOpen = false,
-    this.autoCloseDelaySeconds = 20, // Matches DOOR_OPEN_DURATION(20000) in DoorControl.cpp
+    this.autoCloseDelaySeconds = 20,
     this.remainingDoorSeconds = 0,
-    this.keypadPin = '2006', // Matches DoorControl(2, "2006") in SmartHome.ino
+    this.keypadPin = '2006',
     this.lastDoorTriggerSource = 'Closed',
     this.isSecurityArmed = true,
     this.isWindowOpen = false,
@@ -226,7 +226,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
       await _btChannel.invokeMethod('requestPermissions');
       await _refreshPairedDevices(autoConnectHc05: true);
     } catch (_) {
-      // Simulator or desktop preview fallback
+      // Desktop preview fallback
     }
   }
 
@@ -326,7 +326,6 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
     if (clean.isEmpty) return;
     _appendSerialMonitor('RX', clean);
 
-    // Ignore raw debug strings if running unpatched SecuritySystem.cpp
     if (!clean.contains(':')) return;
 
     final parts = clean.split(',');
@@ -475,7 +474,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
           _sendBtCommand('DOOR:AUTO_CLOSED');
           _addLog(
             'Kagix Main Door Closed',
-            'Door servo (D2) returned to 0° after 20s preset delay.',
+            'Door servo (D2) returned to closed position after 20s preset delay.',
           );
         }
       });
@@ -507,7 +506,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
     _addLog(
       armed ? 'Security System ARMED (SEC:1)' : 'Security System DISARMED (SEC:0)',
       armed
-          ? 'Window IR2 sensor (A2 -> Buzzer D5) and Door PIR (A3 -> Exterior Matrix #2 D7) active.'
+          ? 'Window IR2 sensor (A2 -> Buzzer D5) and Door PIR (A3 -> Exterior Matrix #2) active.'
           : 'Security alarms and exterior Matrix #2 disabled.',
     );
   }
@@ -523,14 +522,14 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
       _state.isAlarmTriggered = false;
     }
 
-    // 2b. Security System: PIR Motion (A3) turns ON Dedicated Exterior Matrix #2 (D7)
+    // 2b. Security System: PIR Motion (A3) turns ON Dedicated Exterior Matrix #2
     if (_state.isSecurityArmed && _state.isMotionDetected) {
       _state.isExteriorMatrixOn = true;
     } else if (!_state.isSecurityArmed) {
       _state.isExteriorMatrixOn = false;
     }
 
-    // 3. Automatic Indoor Lighting: LDR (A0) < Threshold (Pot #1 A6 or L_THR) -> Matrix #1 (D6)
+    // 3. Automatic Indoor Lighting: LDR (A0) < Threshold (Pot #1 A6 or L_THR) -> Matrix #1
     if (_state.isIndoorLightAuto) {
       _state.isIndoorLightOn = _state.ldrAdcValue < _state.ldrThreshold;
     }
@@ -883,7 +882,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
   }
 
   // ---------------------------------------------------------------------------
-  // MAIN DASHBOARD UI
+  // MAIN DASHBOARD UI (CLEAN, RESPONSIVE & WITHOUT SENSOR SIMULATOR)
   // ---------------------------------------------------------------------------
 
   @override
@@ -933,8 +932,9 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                   ),
                   Text(
-                    'Arduino Nano • 2 Pots (A6/A7) • 2 Matrix LEDs (D6/D7)',
+                    'Arduino Nano • 2 Pots (A6/A7) • 2 Matrix LEDs',
                     style: TextStyle(fontSize: 11),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -977,8 +977,6 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
           _buildLightingSystemCard(),
           const SizedBox(height: 16),
           _buildEnvironmentAndClimateCard(),
-          const SizedBox(height: 16),
-          _buildHardwareSimulatorCard(),
           const SizedBox(height: 24),
         ],
       ),
@@ -1017,6 +1015,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
               ],
             ),
           ),
+          const SizedBox(width: 8),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: Colors.white,
@@ -1033,7 +1032,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
   /// 5. Exact 16x2 I2C LCD Feedback Display Mirror (DisplayManager.cpp: 0x27 on A4/A5)
   Widget _buildLcdFeedbackDisplay() {
     final btStatusText = _state.isBtConnected
-        ? 'BT: ${_state.connectedDevice?.name ?? "Kagix-HC05"} (D0/D1)'
+        ? 'BT: ${_state.connectedDevice?.name ?? "Kagix-HC05"}'
         : 'BT: Disconnected';
 
     return Container(
@@ -1047,23 +1046,22 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.monitor, color: Color(0xFF94A3B8), size: 16),
-                  SizedBox(width: 6),
-                  Text(
-                    '16×2 I2C LCD (0x27 • NANO PINS A4 SDA / A5 SCL)',
-                    style: TextStyle(
-                      color: Color(0xFF94A3B8),
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.6,
-                    ),
+              const Icon(Icons.monitor, color: Color(0xFF94A3B8), size: 16),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  '16×2 I2C LCD (0x27 • A4 SDA / A5 SCL)',
+                  style: TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.4,
                   ),
-                ],
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
+              const SizedBox(width: 8),
               InkWell(
                 onTap: _showBluetoothClassicSheet,
                 child: Container(
@@ -1145,6 +1143,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Icon(
                   _state.isDoorOpen
@@ -1156,9 +1155,10 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
                 const Expanded(
                   child: Text(
                     '1. Main Door Access (Servo D2 + 4×4 Keypad)',
-                    style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                   ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
@@ -1173,13 +1173,13 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
                   child: Text(
                     _state.isDoorOpen
                         ? 'OPENED (${_state.remainingDoorSeconds}s)'
-                        : 'CLOSED (0°)',
+                        : 'CLOSED',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                      fontSize: 11.5,
                       color: _state.isDoorOpen
-                          ? Colors.orange.shade800
-                          : Colors.green.shade800,
+                          ? Colors.orange.shade400
+                          : Colors.green.shade400,
                     ),
                   ),
                 ),
@@ -1214,7 +1214,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
                 const SizedBox(width: 10),
                 OutlinedButton.icon(
                   onPressed: _showKeypadDialog,
-                  icon: const Icon(Icons.dialpad),
+                  icon: const Icon(Icons.dialpad, size: 18),
                   label: const Text('PIN (2006)'),
                 ),
               ],
@@ -1225,7 +1225,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
     );
   }
 
-  /// 2. Security System Card (Dedicated Switch #2 D8, Window IR2 A2, Door PIR A3, Buzzer D5, Matrix #2 D7)
+  /// 2. Security System Card (Dedicated Switch #2 D8, Window IR2 A2, Door PIR A3, Buzzer D5, Matrix #2)
   Widget _buildSecuritySystemCard() {
     return Card(
       elevation: 1,
@@ -1235,6 +1235,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Icon(
                   _state.isSecurityArmed ? Icons.shield : Icons.shield_outlined,
@@ -1245,10 +1246,11 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    '2. Security System (Dedicated Matrix #2 D7)',
-                    style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold),
+                    '2. Security System (Dedicated Matrix #2)',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                   ),
                 ),
+                const SizedBox(width: 8),
                 Switch(
                   value: _state.isSecurityArmed,
                   onChanged: _toggleSecurityMode,
@@ -1256,7 +1258,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
               ],
             ),
             Text(
-              'Dedicated Hardware: Switch #2 (D8) • Window IR2 (A2) → Piezo Buzzer (D5) • Door PIR (A3) → Exterior 8×8 Matrix LED #2 (D7, 60s timer).',
+              'Dedicated Hardware: Switch #2 (D8) • Window IR2 (A2) → Piezo Buzzer (D5) • Door PIR (A3) → Exterior 8×8 Matrix LED #2 (60s timer).',
               style: TextStyle(
                 fontSize: 12,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -1273,19 +1275,27 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
                     ? Colors.red
                     : Colors.teal,
               ),
-              title: const Text('Window Intruder Sensor (IR2 Pin A2 → Buzzer D5)'),
+              title: const Text(
+                'Window Intruder Sensor (IR2 Pin A2 → Buzzer D5)',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+              ),
               subtitle: Text(
                 _state.isWindowOpen
                     ? (_state.isSecurityArmed
                         ? 'BREACH! Buzzer (D5) pulsing every 200ms'
                         : 'Window Open (Disarmed)')
                     : 'Window Closed & Secure (IR2 HIGH)',
+                style: const TextStyle(fontSize: 12),
               ),
               trailing: Chip(
+                visualDensity: VisualDensity.compact,
                 backgroundColor: _state.isWindowOpen
                     ? Colors.red.withOpacity(0.15)
                     : Colors.green.withOpacity(0.15),
-                label: Text(_state.isWindowOpen ? 'WIN:1' : 'WIN:0'),
+                label: Text(
+                  _state.isWindowOpen ? 'WIN:1' : 'WIN:0',
+                  style: const TextStyle(fontSize: 11.5),
+                ),
               ),
             ),
             ListTile(
@@ -1296,20 +1306,26 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
                     ? Colors.amber.shade800
                     : Colors.grey,
               ),
-              title: const Text('Door Motion (PIR Pin A3 → Matrix LED #2 Pin D7)'),
+              title: const Text(
+                'Door Motion (PIR Pin A3 → Matrix LED #2)',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+              ),
               subtitle: Text(
                 _state.isExteriorMatrixOn
-                    ? 'Exterior 8×8 Matrix LED #2 (D7) ON (60s Security Timer)'
-                    : 'Exterior 8×8 Matrix LED #2 (D7) OFF',
+                    ? 'Exterior 8×8 Matrix LED #2 ON (60s Security Timer)'
+                    : 'Exterior 8×8 Matrix LED #2 OFF',
+                style: const TextStyle(fontSize: 12),
               ),
               trailing: Chip(
+                visualDensity: VisualDensity.compact,
                 avatar: Icon(
                   Icons.grid_on,
-                  size: 16,
+                  size: 15,
                   color: _state.isExteriorMatrixOn ? Colors.red : Colors.grey,
                 ),
                 label: Text(
                   _state.isExteriorMatrixOn ? 'Matrix #2 ON' : 'Matrix #2 OFF',
+                  style: const TextStyle(fontSize: 11.5),
                 ),
               ),
             ),
@@ -1329,6 +1345,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Icon(
                   _state.isIndoorLightOn
@@ -1341,18 +1358,21 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    '3. Indoor Lighting (Matrix #1 D6 & Pot #1 A6)',
-                    style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold),
+                    '3. Indoor Lighting (Matrix #1 & Pot #1 A6)',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                   ),
                 ),
+                const SizedBox(width: 8),
                 Chip(
+                  visualDensity: VisualDensity.compact,
                   avatar: Icon(
                     Icons.grid_view_rounded,
-                    size: 16,
+                    size: 15,
                     color: _state.isIndoorLightOn ? Colors.amber : Colors.grey,
                   ),
                   label: Text(
                     _state.isIndoorLightOn ? 'Matrix #1: ON' : 'Matrix #1: OFF',
+                    style: const TextStyle(fontSize: 11.5),
                   ),
                 ),
               ],
@@ -1366,79 +1386,86 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
               ),
             ),
             const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Lighting Mode',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(
-                      value: true,
-                      label: Text('Auto (LIGHT:AUTO)'),
-                    ),
-                    ButtonSegment(
-                      value: false,
-                      label: Text('Manual (LIGHT:1/0)'),
-                    ),
-                  ],
-                  selected: {_state.isIndoorLightAuto},
-                  onSelectionChanged: (selection) {
-                    final auto = selection.first;
-                    setState(() {
-                      _state.isIndoorLightAuto = auto;
-                      _evaluateAutomationRules();
-                    });
-                    if (auto) {
-                      _sendBtCommand('LIGHT:AUTO');
-                    } else {
-                      _sendBtCommand(
-                        _state.isIndoorLightOn ? 'LIGHT:1' : 'LIGHT:0',
-                      );
-                    }
-                  },
-                ),
-              ],
+            const Text(
+              'Lighting Mode (Pin D6):',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.tonalIcon(
-                    onPressed: () {
-                      setState(() {
-                        _state.isIndoorLightAuto = false;
-                        _state.isIndoorLightOn = !_state.isIndoorLightOn;
-                      });
-                      _sendBtCommand(
-                        _state.isIndoorLightOn ? 'LIGHT:1' : 'LIGHT:0',
-                      );
-                    },
-                    icon: Icon(
-                      _state.isIndoorLightOn
-                          ? Icons.lightbulb_outline
-                          : Icons.lightbulb,
-                    ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(
+                    value: true,
+                    icon: Icon(Icons.hdr_auto_outlined, size: 18),
                     label: Text(
-                      _state.isIndoorLightOn
-                          ? 'Turn Matrix #1 OFF (LIGHT:0)'
-                          : 'Turn Matrix #1 ON (LIGHT:1)',
+                      'Auto (LIGHT:AUTO)',
+                      style: TextStyle(fontSize: 12),
                     ),
                   ),
+                  ButtonSegment(
+                    value: false,
+                    icon: Icon(Icons.touch_app_outlined, size: 18),
+                    label: Text(
+                      'Manual (LIGHT:1/0)',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+                selected: {_state.isIndoorLightAuto},
+                onSelectionChanged: (selection) {
+                  final auto = selection.first;
+                  setState(() {
+                    _state.isIndoorLightAuto = auto;
+                    _evaluateAutomationRules();
+                  });
+                  if (auto) {
+                    _sendBtCommand('LIGHT:AUTO');
+                  } else {
+                    _sendBtCommand(
+                      _state.isIndoorLightOn ? 'LIGHT:1' : 'LIGHT:0',
+                    );
+                  }
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: () {
+                  setState(() {
+                    _state.isIndoorLightAuto = false;
+                    _state.isIndoorLightOn = !_state.isIndoorLightOn;
+                  });
+                  _sendBtCommand(
+                    _state.isIndoorLightOn ? 'LIGHT:1' : 'LIGHT:0',
+                  );
+                },
+                icon: Icon(
+                  _state.isIndoorLightOn
+                      ? Icons.lightbulb_outline
+                      : Icons.lightbulb,
                 ),
-              ],
+                label: Text(
+                  _state.isIndoorLightOn
+                      ? 'Turn Matrix #1 OFF (LIGHT:0)'
+                      : 'Turn Matrix #1 ON (LIGHT:1)',
+                ),
+              ),
             ),
             const Divider(height: 22),
             // Matrix #1 Brightness Slider (BRI:0..255)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Indoor Matrix #1 Brightness (BRI:0–255):',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                const Expanded(
+                  child: Text(
+                    'Indoor Matrix #1 Brightness (BRI:0–255):',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   '${_state.matrixBrightness} / 255',
                   style: const TextStyle(fontWeight: FontWeight.bold),
@@ -1471,6 +1498,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
                     ),
                   ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   '${_state.ldrThreshold} / 1023',
                   style: const TextStyle(fontWeight: FontWeight.bold),
@@ -1502,7 +1530,10 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
                   _sendBtCommand('L_THR:AUTO');
                 },
                 icon: const Icon(Icons.settings_backup_restore, size: 16),
-                label: const Text('Return Control to Physical Pot #1 (A6) [L_THR:AUTO]'),
+                label: const Text(
+                  'Return Control to Physical Pot #1 (A6) [L_THR:AUTO]',
+                  style: TextStyle(fontSize: 12),
+                ),
               ),
             ),
           ],
@@ -1521,6 +1552,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Icon(
                   Icons.thermostat_rounded,
@@ -1530,14 +1562,19 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
                 const Expanded(
                   child: Text(
                     '4. Climate Control (DHT11 D4, Fan D9, Pot #2 A7)',
-                    style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                   ),
                 ),
+                const SizedBox(width: 8),
                 Chip(
-                  label: Text(_state.isFanOn ? 'Fan: ON' : 'Fan: OFF'),
+                  visualDensity: VisualDensity.compact,
+                  label: Text(
+                    _state.isFanOn ? 'Fan: ON' : 'Fan: OFF',
+                    style: const TextStyle(fontSize: 11.5),
+                  ),
                   avatar: Icon(
                     Icons.air,
-                    size: 18,
+                    size: 16,
                     color: _state.isFanOn ? Colors.blue : Colors.grey,
                   ),
                 ),
@@ -1571,39 +1608,46 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
               ],
             ),
             const Divider(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Fan Mode (Pin D9)',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(
-                      value: true,
-                      label: Text('Auto (FAN:AUTO)'),
+            const Text(
+              'Fan Mode (Pin D9):',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(
+                    value: true,
+                    icon: Icon(Icons.hdr_auto_outlined, size: 18),
+                    label: Text(
+                      'Auto (FAN:AUTO)',
+                      style: TextStyle(fontSize: 12),
                     ),
-                    ButtonSegment(
-                      value: false,
-                      label: Text('Manual (FAN:1/0)'),
+                  ),
+                  ButtonSegment(
+                    value: false,
+                    icon: Icon(Icons.touch_app_outlined, size: 18),
+                    label: Text(
+                      'Manual (FAN:1/0)',
+                      style: TextStyle(fontSize: 12),
                     ),
-                  ],
-                  selected: {_state.isFanAuto},
-                  onSelectionChanged: (selection) {
-                    final auto = selection.first;
-                    setState(() {
-                      _state.isFanAuto = auto;
-                      _evaluateAutomationRules();
-                    });
-                    if (auto) {
-                      _sendBtCommand('FAN:AUTO');
-                    } else {
-                      _sendBtCommand(_state.isFanOn ? 'FAN:1' : 'FAN:0');
-                    }
-                  },
-                ),
-              ],
+                  ),
+                ],
+                selected: {_state.isFanAuto},
+                onSelectionChanged: (selection) {
+                  final auto = selection.first;
+                  setState(() {
+                    _state.isFanAuto = auto;
+                    _evaluateAutomationRules();
+                  });
+                  if (auto) {
+                    _sendBtCommand('FAN:AUTO');
+                  } else {
+                    _sendBtCommand(_state.isFanOn ? 'FAN:1' : 'FAN:0');
+                  }
+                },
+              ),
             ),
             const SizedBox(height: 12),
             if (_state.isFanAuto) ...[
@@ -1619,6 +1663,7 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
                       ),
                     ),
                   ),
+                  const SizedBox(width: 8),
                   Text(
                     '${_state.tempThresholdC.toStringAsFixed(1)} °C',
                     style: const TextStyle(fontWeight: FontWeight.bold),
@@ -1654,7 +1699,10 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
                     _sendBtCommand('THR:AUTO');
                   },
                   icon: const Icon(Icons.settings_backup_restore, size: 16),
-                  label: const Text('Return Control to Physical Pot #2 (A7) [THR:AUTO]'),
+                  label: const Text(
+                    'Return Control to Physical Pot #2 (A7) [THR:AUTO]',
+                    style: TextStyle(fontSize: 12),
+                  ),
                 ),
               ),
             ] else
@@ -1695,12 +1743,15 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
             children: [
               Icon(icon, color: color, size: 20),
               const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12.5,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -1719,181 +1770,6 @@ class _KagixHomeDashboardState extends State<KagixHomeDashboard> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  /// Interactive Hardware Event Simulator for testing all Arduino Nano inputs
-  Widget _buildHardwareSimulatorCard() {
-    return Card(
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.memory,
-                  color: Theme.of(context).colorScheme.secondary,
-                ),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Arduino Nano Hardware & Telemetry Simulator',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Test incoming BluetoothManager::sendStatus() frames from all dedicated Arduino Nano sensors (2 Pots, 2 Switches, 2 Matrix LEDs, IR2, PIR, Keypad):',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ActionChip(
-                  avatar: Icon(
-                    _state.isWindowOpen ? Icons.close : Icons.warning_amber,
-                    size: 18,
-                  ),
-                  label: Text(
-                    _state.isWindowOpen
-                        ? 'Close Window IR2 (A2)'
-                        : 'Trigger Window IR2 (A2)',
-                  ),
-                  onPressed: () {
-                    final nextWin = _state.isWindowOpen ? 0 : 1;
-                    _parseArduinoTelemetryFrame('WIN:$nextWin');
-                  },
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.dialpad, size: 18),
-                  label: const Text('Physical Keypad "2006" + A'),
-                  onPressed: () {
-                    _openMainDoor(source: 'Physical 4×4 Keypad (2006 + A)');
-                  },
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.toggle_on, size: 18),
-                  label: const Text('Flip Light Switch #1 (D3)'),
-                  onPressed: () {
-                    final nextLight = _state.isIndoorLightOn ? 0 : 1;
-                    _parseArduinoTelemetryFrame('LAUTO:0,LIN:$nextLight');
-                  },
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.security, size: 18),
-                  label: const Text('Flip Security Switch #2 (D8)'),
-                  onPressed: () {
-                    final nextSec = _state.isSecurityArmed ? 0 : 1;
-                    _parseArduinoTelemetryFrame('SEC:$nextSec');
-                  },
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.directions_walk, size: 18),
-                  label: Text(
-                    _state.isMotionDetected
-                        ? 'Clear Door PIR (A3)'
-                        : 'Trigger Door PIR (A3 → Matrix #2 D7)',
-                  ),
-                  onPressed: () {
-                    final nextMot = _state.isMotionDetected ? 0 : 1;
-                    _parseArduinoTelemetryFrame('MOT:$nextMot,EXT:$nextMot');
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const SizedBox(
-                  width: 145,
-                  child: Text('Pot #1 (A6 LDR Thr):', style: TextStyle(fontSize: 12)),
-                ),
-                Expanded(
-                  child: Slider(
-                    value: _state.ldrThreshold.toDouble(),
-                    min: 0,
-                    max: 1023,
-                    label: 'Pot #1 (A6): ${_state.ldrThreshold}',
-                    onChanged: (val) {
-                      setState(() {
-                        _state.ldrThreshold = val.round();
-                        _state.isLdrThrFromApp = false;
-                        _evaluateAutomationRules();
-                      });
-                    },
-                    onChangeEnd: (val) {
-                      _parseArduinoTelemetryFrame('LTHR:${val.round()}');
-                    },
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                const SizedBox(
-                  width: 145,
-                  child: Text('Pot #2 (A7 Temp Thr):', style: TextStyle(fontSize: 12)),
-                ),
-                Expanded(
-                  child: Slider(
-                    value: _state.tempThresholdC.clamp(0.0, 55.0),
-                    min: 0.0,
-                    max: 55.0,
-                    label: 'Pot #2 (A7): ${_state.tempThresholdC.toStringAsFixed(1)} °C',
-                    onChanged: (val) {
-                      setState(() {
-                        _state.tempThresholdC = val;
-                        _state.isTempThrFromApp = false;
-                        _evaluateAutomationRules();
-                      });
-                    },
-                    onChangeEnd: (val) {
-                      _parseArduinoTelemetryFrame(
-                        'THR:${val.toStringAsFixed(1)}',
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                const SizedBox(
-                  width: 145,
-                  child: Text('LDR Sensor (Pin A0):', style: TextStyle(fontSize: 12)),
-                ),
-                Expanded(
-                  child: Slider(
-                    value: _state.ldrAdcValue.toDouble(),
-                    min: 0,
-                    max: 1023,
-                    label: 'LDR (A0): ${_state.ldrAdcValue}',
-                    onChanged: (val) {
-                      setState(() {
-                        _state.ldrAdcValue = val.round();
-                        _evaluateAutomationRules();
-                      });
-                    },
-                    onChangeEnd: (val) {
-                      _parseArduinoTelemetryFrame('LUX:${val.round()}');
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
